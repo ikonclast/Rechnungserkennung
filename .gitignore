@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data - niemals echte Rechnungen committen
+samples/*
+!samples/.gitkeep
+
+output/*
+!output/.gitkeep
+
+# Docker / local data
+docker-data/
+postgres-data/
+minio-data/
+
+# Logs
+*.log
+logs/
