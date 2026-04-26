@@ -20,10 +20,13 @@ samples/*
 output/*
 !output/.gitkeep
 
-#docs 
+#docs
 docs/*
 !docs/.gitkeep
 !docs/RECHNUNGSERKENNUNG_LEITFADEN.md
+!docs/SKRIPTE_ANLEITUNG.md
+!docs/wochenberichte/
+!docs/wochenberichte/**
 
 # Docker / local data
 docker-data/
