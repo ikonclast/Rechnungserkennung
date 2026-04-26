@@ -25,6 +25,7 @@ docs/*
 !docs/.gitkeep
 !docs/RECHNUNGSERKENNUNG_LEITFADEN.md
 !docs/SKRIPTE_ANLEITUNG.md
+!docs/FELDANFORDERUNGEN_STEUERBERATER.md
 !docs/wochenberichte/
 !docs/wochenberichte/**
 
