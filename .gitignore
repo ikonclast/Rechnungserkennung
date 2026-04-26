@@ -20,6 +20,11 @@ samples/*
 output/*
 !output/.gitkeep
 
+#docs 
+docs/*
+!docs/.gitkeep
+!docs/RECHNUNGSERKENNUNG_LEITFADEN.md
+
 # Docker / local data
 docker-data/
 postgres-data/
