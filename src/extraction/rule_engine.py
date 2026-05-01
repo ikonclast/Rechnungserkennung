@@ -54,18 +54,43 @@ def _match_field(field_name: str, text: str, rules: list[Rule]) -> FieldResult:
     for rule in rules:
         m = rule.pattern.search(text)
         if m:
-            value = _clean_value(field_name, m.group(1))
+            if rule.fixed_value is not None:
+                value = rule.fixed_value
+            else:
+                value = _clean_value(field_name, m.group(1))
             if value and _is_plausible(field_name, value):
                 return {"value": value, "confidence": rule.confidence, "rule": rule.description}
     return {"value": None, "confidence": 0.0, "rule": None}
 
 
+def _detect_dokumenttyp(text: str, brutto_result: FieldResult) -> FieldResult:
+    """Dokumenttyp mit Cross-Field-Logik: erst Regex-Regeln, dann brutto-basierte KBR-Erkennung."""
+    result = _match_field("dokumenttyp", text, ALL_FIELDS["dokumenttyp"])
+    if result["value"] is not None:
+        return result
+
+    # Kleinbetragsrechnung §33 UStDV: Brutto ≤ 250 EUR
+    brutto_str = brutto_result.get("value")
+    if brutto_str:
+        try:
+            brutto_val = float(brutto_str.replace(".", "").replace(",", "."))
+            if 0 < brutto_val <= 250.0:
+                return {"value": "kleinbetragsrechnung", "confidence": 0.80, "rule": "brutto_leq_250_kbr"}
+        except (ValueError, AttributeError):
+            pass
+
+    return {"value": "rechnung", "confidence": 0.70, "rule": "default_rechnung"}
+
+
 def extract(text: str) -> ExtractionResult:
     """Extrahiert alle Felder aus einem normalisierten Markdown-Text."""
-    return {
+    result: ExtractionResult = {
         field: _match_field(field, text, rules)
         for field, rules in ALL_FIELDS.items()
+        if field != "dokumenttyp"
     }
+    result["dokumenttyp"] = _detect_dokumenttyp(text, result.get("betrag_brutto", {}))
+    return result
 
 
 def extract_from_file(path: Path) -> ExtractionResult:

@@ -21,6 +21,7 @@ class Rule:
     pattern: re.Pattern[str]
     confidence: float
     description: str
+    fixed_value: str | None = None  # wenn gesetzt, wird dieser Wert statt group(1) zurückgegeben
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +103,13 @@ RECHNUNGSNUMMER: list[Rule] = [
         confidence=0.55,
         description="congstar_format_ma_nummer",
     ),
+    # bluebrix Sidebar: Label und Wert durch mehrere Zeilen getrennt (Datum+Kdnr dazwischen)
+    # Mindestens 8 Ziffern — überspringt 6-stellige Kundennummer "999856"
+    Rule(
+        pattern=re.compile(r'Rechnungsnummer\s*\n+(?:[^\n]*\n)*?(\d{8,12})\b'),
+        confidence=0.60,
+        description="label_rechnungsnummer_sidebar_bluebrix",
+    ),
 ]
 
 
@@ -128,6 +136,27 @@ DATUM: list[Rule] = [
         pattern=re.compile(r'DATUM\s*\n+' + _DATE_DE),
         confidence=0.85,
         description="label_datum_sevdesk_sidebar",
+    ),
+    # intersport: "Rechnungsdatum March 26, 2026" — englisches Datum in Tabellenzelle
+    Rule(
+        pattern=re.compile(
+            r'Rechnungsdatum\s+'
+            r'((?:January|February|March|April|May|June|July|August|September|October|November|December)'
+            r'\s+\d{1,2},?\s+\d{4})',
+            re.IGNORECASE,
+        ),
+        confidence=0.85,
+        description="label_rechnungsdatum_english_full",
+    ),
+    # audible: "Rechnungsdatum\n/Lieferdatum\n\n09 Apr 2026" — abgekürzter englischer Monat
+    Rule(
+        pattern=re.compile(
+            r'Rechnungsdatum\s*\n+(?:/\s*Lieferdatum\s*\n+)?'
+            r'(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})',
+            re.IGNORECASE,
+        ),
+        confidence=0.85,
+        description="label_rechnungsdatum_english_abbr",
     ),
     # Erstes Datum im Dokument als Fallback — niedrige Confidence
     # weil es auch Lieferdatum oder Zahlungsziel treffen kann
@@ -205,6 +234,24 @@ BETRAG_BRUTTO: list[Rule] = [
         pattern=re.compile(r'Zahlbetrag\s*\n+' + _AMOUNT_EUR_FIRST, re.IGNORECASE),
         confidence=0.90,
         description="label_zahlbetrag_eur_first_audible",
+    ),
+    # "Zahlbetrag\n\n9,34 €" — Amazon (EUR nach Zahl, deutsches Format)
+    Rule(
+        pattern=re.compile(r'Zahlbetrag\s*\n+' + _AMOUNT, re.IGNORECASE),
+        confidence=0.90,
+        description="label_zahlbetrag_eur_after_amazon",
+    ),
+    # "## 164,99 € fällig am" — fernerofolio (Betrag im Heading vor "fällig")
+    Rule(
+        pattern=re.compile(r'##\s+([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\s+fällig\b'),
+        confidence=0.88,
+        description="label_betrag_heading_faellig_fernerofolio",
+    ),
+    # "58,00 €\n\n## Zu zahlender Betrag:" — congstar (Betrag steht vor dem Label)
+    Rule(
+        pattern=re.compile(r'([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\s*\n+##\s*Zu\s+zahlender\s+Betrag', re.IGNORECASE),
+        confidence=0.88,
+        description="label_zu_zahlender_betrag_congstar",
     ),
     # "Rechnungsbetrag" generisch
     Rule(
@@ -285,6 +332,18 @@ MWST_BETRAG: list[Rule] = [
         confidence=0.75,
         description="label_ust_pct_audible_en",
     ),
+    # "| USt. - Deutschland 19 % inkl. ... | 26,34 € |" — fernerofolio (wiederholte Zellen, €-Suffix)
+    Rule(
+        pattern=re.compile(r'.*\bUSt\.\s*-\s*Deutschland\s+\d+\s*%.*\|\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.90,
+        description="label_ust_deutschland_betrag_tabelle",
+    ),
+    # "| USt. Gesamt | ... | 7,85 € | 1,49 € |" — Amazon (letzter Wert = MwSt-Betrag)
+    Rule(
+        pattern=re.compile(r'.*\bUSt\.?\s+Gesamt\b.*\|\s*([\d]+,\d{2})\s*€\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.88,
+        description="label_ust_gesamt_mwst_amazon",
+    ),
 ]
 
 
@@ -316,6 +375,295 @@ IBAN: list[Rule] = [
 
 
 # ---------------------------------------------------------------------------
+# DOKUMENTTYP (Enum: rechnung | gutschrift | storno | kleinbetragsrechnung)
+# Reihenfolge: Storno vor Gutschrift — sevDesk-Storno trägt beides im Text.
+# Kleinbetragsrechnung und Default "rechnung" via Cross-Field-Logik in rule_engine.py.
+# ---------------------------------------------------------------------------
+
+DOKUMENTTYP: list[Rule] = [
+    # Storno — explizites Keyword: "Storno wegen..." / "STORNO: ..." (fastbill, billomat, sevDesk, lexoffice)
+    Rule(
+        pattern=re.compile(r'\bStorno\b', re.IGNORECASE),
+        confidence=0.92,
+        description="keyword_storno",
+        fixed_value="storno",
+    ),
+    # Storno — Billomat GS-Nummernpräfix (GS + 11–13 Ziffern)
+    Rule(
+        pattern=re.compile(r'\bGS\d{11,13}\b'),
+        confidence=0.85,
+        description="billomat_gs_prefix_storno",
+        fixed_value="storno",
+    ),
+    # Gutschrift — Heading "## Gutschrift Nr." / "Gutschrift Nr." (sevDesk-Gutschrift)
+    Rule(
+        pattern=re.compile(r'(?:##\s*)?Gutschrift\s+Nr\.?', re.IGNORECASE),
+        confidence=0.95,
+        description="label_gutschrift_nr",
+        fixed_value="gutschrift",
+    ),
+    # Gutschrift — Lexoffice "## Rechnungskorrektur"
+    Rule(
+        pattern=re.compile(r'Rechnungskorrektur', re.IGNORECASE),
+        confidence=0.90,
+        description="label_rechnungskorrektur",
+        fixed_value="gutschrift",
+    ),
+    # Gutschrift — allgemeines Keyword (fastbill Hinweis, billomat-Gutschrift Titel)
+    Rule(
+        pattern=re.compile(r'\bGutschrift\b', re.IGNORECASE),
+        confidence=0.78,
+        description="keyword_gutschrift",
+        fixed_value="gutschrift",
+    ),
+    # Kleinbetragsrechnung + Default "rechnung" → in rule_engine.py als Cross-Field-Logik
+]
+
+
+# ---------------------------------------------------------------------------
+# NETTO_BETRAG (Zwischensumme netto / Gesamtbetrag netto)
+# Quellen: je nach Tool unterschiedliche Labels und Formatierungen
+# ---------------------------------------------------------------------------
+
+NETTO_BETRAG: list[Rule] = [
+    # sevDesk: "| Gesamtbetrag netto | ... | 2.120,00 EUR |" (Tabelle, wiederholte Zellen)
+    Rule(
+        pattern=re.compile(r'.*\bGesamtbetrag\s+netto\b.*\|\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*EUR\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.95,
+        description="label_gesamtbetrag_netto_sevdesk",
+    ),
+    # STRATO: "| Entspricht der Summe netto | EUR | 26,05 |"
+    Rule(
+        pattern=re.compile(r'\|\s*Entspricht\s+der\s+Summe\s+netto\s*\|\s*EUR\s*\|\s*([\d]+[.,]\d{2})\s*\|', re.IGNORECASE),
+        confidence=0.95,
+        description="label_entspricht_summe_netto_strato",
+    ),
+    # Fastbill: "Zwischensumme\n\n960,00 €" (Standalone-Label, eigene Zeile)
+    Rule(
+        pattern=re.compile(r'(?<!\w)Zwischensumme\s*\n+\s*' + _AMOUNT, re.IGNORECASE),
+        confidence=0.90,
+        description="label_zwischensumme_fastbill",
+    ),
+    # Billomat: "| Zwischensumme netto: | ... | 2.530,00 € |" (Tabelle, letzte Zelle)
+    Rule(
+        pattern=re.compile(r'.*\bZwischensumme\s+netto\b.*\|\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.90,
+        description="label_zwischensumme_netto_billomat",
+    ),
+    # Lexoffice: "| Zwischensumme (netto) | ... | 881,00 |" (Tabelle, kein EUR-Suffix)
+    Rule(
+        pattern=re.compile(r'.*\bZwischensumme\s+\(netto\).*\|\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.90,
+        description="label_zwischensumme_netto_lexoffice",
+    ),
+    # intersport: "Nettosumme | ... | € 69,62" (Tabelle, EUR vor Zahl)
+    Rule(
+        pattern=re.compile(r'.*\bNettosumme\b.*\|\s*€\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.90,
+        description="label_nettosumme_intersport",
+    ),
+    # fernerofolio: "| Netto | Netto | ... | 138,65 € |" (wiederholte Zellen)
+    Rule(
+        pattern=re.compile(r'.*\|\s*Netto\s*\|\s*Netto\b.*\|\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.88,
+        description="label_netto_netto_fernerofolio",
+    ),
+    # billomat_storno Footer: "Netto: 1.200,42 €" (standalone Label außerhalb Tabelle)
+    Rule(
+        pattern=re.compile(r'\bNetto:\s*([\d]{1,3}(?:\.\d{3})*,\d{2})\s*(?:€|EUR)', re.IGNORECASE),
+        confidence=0.85,
+        description="label_netto_colon",
+    ),
+    # word_template: "Summe: €180,00" (Netto als "Summe" bezeichnet, EUR-First)
+    Rule(
+        pattern=re.compile(r'\bSumme:\s*€\s*([\d]{1,3}(?:\.\d{3})*,\d{2})'),
+        confidence=0.85,
+        description="label_summe_eur_first_word_template",
+    ),
+    # Audible: "(ohne USt.) 9.30" — englisches Dezimalformat
+    Rule(
+        pattern=re.compile(r'\(ohne\s+USt\.\)\s+([\d]+\.\d{2})', re.IGNORECASE),
+        confidence=0.80,
+        description="label_ohne_ust_audible",
+    ),
+    # "| USt. Gesamt | ... | 7,85 € | 1,49 € |" — Amazon: vorletzte Zelle = Netto-Basis
+    Rule(
+        pattern=re.compile(r'.*\bUSt\.?\s+Gesamt\b.*\|\s*([\d]+,\d{2})\s*€\s*\|\s*[\d]+,\d{2}\s*€\s*\|', re.MULTILINE | re.IGNORECASE),
+        confidence=0.88,
+        description="label_ust_gesamt_netto_amazon",
+    ),
+    # "Netto: USt 19 % (1.200,42 €)" — billomat_storno: Netto-Basis in Klammern nach MwSt-Label
+    Rule(
+        pattern=re.compile(r'\bNetto:\s*USt\s+\d+\s*%\s*\(([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\)', re.IGNORECASE),
+        confidence=0.85,
+        description="label_netto_ust_klammer_billomat_storno",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# MWST_SATZ (Prozentsatz als String, z. B. "19,00" oder "19" oder "7")
+# Nur den Satz extrahieren — den Betrag haben wir schon in MWST_BETRAG.
+# Bei mehreren Sätzen auf einer Rechnung: höchste Confidence gewinnt (ersten Match).
+# ---------------------------------------------------------------------------
+
+MWST_SATZ: list[Rule] = [
+    # "zzgl. 19,00% MwSt." — Fastbill, intersport
+    Rule(
+        pattern=re.compile(r'zzgl\.?\s*([\d]+(?:,\d+)?)\s*%\s*MwSt', re.IGNORECASE),
+        confidence=0.95,
+        description="label_zzgl_pct_mwst",
+    ),
+    # "Umsatzsteuer (19,00%)" — STRATO
+    Rule(
+        pattern=re.compile(r'Umsatzsteuer\s*\(([\d]+(?:,\d+)?)\s*%\)', re.IGNORECASE),
+        confidence=0.95,
+        description="label_umsatzsteuer_klammer_pct",
+    ),
+    # "Umsatzsteuer 19%" — sevDesk, lexoffice
+    Rule(
+        pattern=re.compile(r'Umsatzsteuer\s+([\d]+(?:,\d+)?)\s*%', re.IGNORECASE),
+        confidence=0.90,
+        description="label_umsatzsteuer_pct",
+    ),
+    # "MwSt (19%)" — word_template
+    Rule(
+        pattern=re.compile(r'MwSt\s*\(([\d]+(?:,\d+)?)\s*%\)', re.IGNORECASE),
+        confidence=0.90,
+        description="label_mwst_klammer_pct",
+    ),
+    # "USt. - Deutschland 19 % inkl." — fernerofolio
+    Rule(
+        pattern=re.compile(r'USt\.?\s*-\s*Deutschland\s+([\d]+(?:,\d+)?)\s*%', re.IGNORECASE),
+        confidence=0.90,
+        description="label_ust_deutschland_pct",
+    ),
+    # "USt 19 %(...)" — billomat
+    Rule(
+        pattern=re.compile(r'\bUSt\s+([\d]+(?:,\d+)?)\s*%', re.IGNORECASE),
+        confidence=0.85,
+        description="label_ust_pct_billomat",
+    ),
+    # "19,0 % MwSt." — bluebrix (Prozent vor Label)
+    Rule(
+        pattern=re.compile(r'([\d]+(?:,\d+)?)\s*%\s*MwSt', re.IGNORECASE),
+        confidence=0.80,
+        description="label_pct_mwst_general",
+    ),
+    # "| 7% | (ohne USt.)" — Audible Zusammenfassungstabelle
+    Rule(
+        pattern=re.compile(r'\|\s*(\d+)\s*%\s*\|\s*\(?\s*ohne\s+USt\.', re.IGNORECASE),
+        confidence=0.75,
+        description="label_ust_pct_audible",
+    ),
+    # "| USt.% | ...\n| 19% | ..." — Amazon: Prozentsatz in Zelle unter USt.%-Spaltenkopf
+    # [^%\n]*? non-greedy: verhindert dass "1" aus "19%" vorab konsumiert wird
+    Rule(
+        pattern=re.compile(r'\bUSt\.%[^\n]*\n[^%\n]*?(\d+(?:,\d+)?)\s*%', re.IGNORECASE),
+        confidence=0.75,
+        description="label_ust_pct_spalte_amazon",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# LIEFERANT_NAME (Rechnungssteller / Verkäufer)
+# Strategie: Explizite Labels > Verkauft-von > Firmenheadings > Erste Zeile mit Separator
+# ---------------------------------------------------------------------------
+
+LIEFERANT_NAME: list[Rule] = [
+    # Explizites Label "Lieferant:" — word_template
+    Rule(
+        pattern=re.compile(r'Lieferant:\s*(.+?)(?=\s+Adresse:|\n|$)', re.IGNORECASE),
+        confidence=0.95,
+        description="label_lieferant",
+    ),
+    # "## Verkauft von\n{name}" — Audible, Stripe-Style-Rechnungen
+    Rule(
+        pattern=re.compile(r'##\s+Verkauft\s+von\s*\n+([^\n]+)', re.IGNORECASE),
+        confidence=0.90,
+        description="label_verkauft_von_heading",
+    ),
+    # "Verkauft von {Name}" — Amazon (inline Text, kein Heading)
+    Rule(
+        pattern=re.compile(r'Verkauft\s+von\s+([A-ZÄÖÜa-zäöüß][^\n|]{5,60}?)(?:[ \t]*\n|[ \t]*$)', re.IGNORECASE),
+        confidence=0.85,
+        description="label_verkauft_von_inline",
+    ),
+    # Erste Zeile mit " · " Separator — STRATO, congstar
+    # [ \t]+ statt \s+ verhindert zeilenübergreifende Matches
+    Rule(
+        pattern=re.compile(r'^([^·\n]{5,50}?)[ \t]+·[ \t]+', re.MULTILINE),
+        confidence=0.78,
+        description="erste_zeile_bullet_separator",
+    ),
+    # Erste Zeile mit " | " Separator — fastbill, billomat_gutschrift/-storno
+    # [ \t]*\| statt \s*\| — Newline vor nächster Tabellenzeile darf nicht überquert werden
+    Rule(
+        pattern=re.compile(r'^([^|\n]{5,60}?)[ \t]*\|', re.MULTILINE),
+        confidence=0.75,
+        description="erste_zeile_pipe_separator",
+    ),
+    # Erste Zeile mit " - " Separator — sevDesk, bluebrix, intersport
+    # [^-\n] schließt Bindestriche in Firmenname aus; [ \t]+ statt \s+ keine Zeilenüberquerung
+    Rule(
+        pattern=re.compile(r'^([A-ZÄÖÜ][^-\n]{4,50}?)[ \t]+-+[ \t]*(?=[A-ZÄÖÜ]|\d)', re.MULTILINE),
+        confidence=0.72,
+        description="erste_zeile_dash_separator",
+    ),
+    # Erste Zeile mit ", " Separator — lexoffice
+    Rule(
+        pattern=re.compile(r'^([A-ZÄÖÜ][^,\n]{5,60}?),[ \t]+(?=[A-ZÄÖÜ]|\d)', re.MULTILINE),
+        confidence=0.72,
+        description="erste_zeile_comma_separator",
+    ),
+    # Billomat-Footer: "Grafik- und Werbeagentur Kreativ+ Bergheimer Str. 56"
+    # Billomat legt Vendor-Block ans Dokumentende — Zeile endet exakt nach Hausnummer.
+    # [^|\n] erlaubt Bindestrich im Firmennamen; \s*$ schlägt fehl wenn PLZ/Stadt folgen.
+    Rule(
+        pattern=re.compile(
+            r'^([A-ZÄÖÜ][^|\n]{5,60}?)\s+[A-ZÄÖÜ][a-zäöüß]+\s+'
+            r'(?:Str\.|Straße|Gasse|Weg|Allee|Platz|Ring|Damm|Chaussee)\s+\d+\s*$',
+            re.MULTILINE,
+        ),
+        confidence=0.70,
+        description="firma_vor_strassenname_footer",
+    ),
+    # Firmenname als Heading mit Rechtssuffix — fernerofolio "## Fenerofolio GmbH"
+    # Kein IGNORECASE → verhindert "ag" in "Gesamtbetrag" als "AG"-Match
+    # [ \t] statt \s → kein Zeilenübergang vor dem Suffix
+    # Letzter Fallback — Erst-Zeile-Regeln und Footer-Regel haben Vorrang
+    Rule(
+        pattern=re.compile(r'##[ \t]+([A-ZÄÖÜ][^#\n]{3,60}?[ \t](?:GmbH|AG|UG|KG|GbR|e\.V\.|Ltd\.?|Inc\.?))\b'),
+        confidence=0.82,
+        description="label_firma_heading_rechtssuffix",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# STEUERNUMMER (Finanzamt-Steuernummer, nicht USt-IdNr.)
+# Format variiert je Bundesland: "12 345 678 910" / "121/5720/5598"
+# ---------------------------------------------------------------------------
+
+STEUERNUMMER: list[Rule] = [
+    # "Steuer-Nr.: 12 345 678 910" / "Steuernummer: 78 901 234 567"
+    # "STEUER-NR. 98 765 432 109" (sevDesk sidebar, kein Doppelpunkt)
+    Rule(
+        pattern=re.compile(r'Steuer(?:nummer|[-\s]?Nr\.?)[:.\s]+(\d{2,3}(?:[\s/]\d{3,4}){2,3})', re.IGNORECASE),
+        confidence=0.95,
+        description="label_steuernummer",
+    ),
+    # Sidebar-Variante ohne Trennzeichen: "STEUER-NR.\n98 765 432 109"
+    Rule(
+        pattern=re.compile(r'STEUER[-\s]?NR\.?\s*\n+(\d{2,3}(?:[\s/]\d{3,4}){2,3})'),
+        confidence=0.90,
+        description="label_steuernummer_sidebar_sevdesk",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
 # Alle Felder — wird von rule_engine.py importiert
 # ---------------------------------------------------------------------------
 
@@ -325,4 +673,9 @@ ALL_FIELDS: dict[str, list[Rule]] = {
     "betrag_brutto":   BETRAG_BRUTTO,
     "mwst_betrag":     MWST_BETRAG,
     "iban":            IBAN,
+    "dokumenttyp":     DOKUMENTTYP,
+    "netto_betrag":    NETTO_BETRAG,
+    "mwst_satz":       MWST_SATZ,
+    "lieferant_name":  LIEFERANT_NAME,
+    "steuernummer":    STEUERNUMMER,
 }
