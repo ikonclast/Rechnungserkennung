@@ -41,6 +41,7 @@ _load_env()
 from src.db import get_conn
 from src import storage
 from src.extraction.rule_engine import extract_from_file
+from src.validation import check_all
 
 # Docling-Imports — selbe Konfiguration wie run_docling_batch.py
 from docling.document_converter import DocumentConverter
@@ -197,6 +198,17 @@ def ingest(pdf_path: Path) -> bool:
         )
         extr_id = cur.fetchone()[0]
 
+        # 9. Validierung + validations INSERT
+        checks = check_all(result)
+        for c in checks:
+            cur.execute(
+                """
+                INSERT INTO validations (extraction_id, check_name, result, detail)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (extr_id, c["check_name"], c["result"], c["detail"]),
+            )
+
     # Ergebnis ausgeben
     r = result
     def fmt(field):
@@ -212,6 +224,18 @@ def ingest(pdf_path: Path) -> bool:
     print(f"    Netto         {fmt('netto_betrag')} €")
     print(f"    Typ           {fmt('dokumenttyp')}")
     print(f"    Lieferant     {fmt('lieferant_name')}")
+
+    # Validierungs-Zusammenfassung
+    fails = [c for c in checks if c["result"] == "fail"]
+    warns = [c for c in checks if c["result"] == "warn"]
+    if fails or warns:
+        print(f"  Validierung: {len(fails)} FAIL  {len(warns)} WARN")
+        for c in fails + warns:
+            marker = "✗ FAIL" if c["result"] == "fail" else "⚠ WARN"
+            print(f"    {marker}  {c['detail']}")
+    else:
+        print(f"  Validierung: alle Checks OK")
+
     return True
 
 
