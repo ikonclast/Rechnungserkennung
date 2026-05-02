@@ -66,8 +66,9 @@ MARKDOWN_LABELS = {
 MARKDOWN_LAYERS = {ContentLayer.BODY, ContentLayer.FURNITURE}
 
 # Ausgabeverzeichnisse für Zwischen-Artefakte (für Debugging aufbewahren)
-DOCLING_OUT  = PROJECT_ROOT / "output" / "docling"  / "ingested"
-NORM_OUT     = PROJECT_ROOT / "output" / "normalized" / "ingested"
+DOCLING_OUT      = PROJECT_ROOT / "output" / "docling"    / "ingested"
+DOCLING_JSON_OUT = PROJECT_ROOT / "output" / "docling"    / "json"
+NORM_OUT         = PROJECT_ROOT / "output" / "normalized" / "ingested"
 
 
 # ---------------------------------------------------------------------------
@@ -82,9 +83,10 @@ def sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def run_docling(pdf_path: Path) -> Path:
-    """Konvertiert PDF zu Markdown via Docling. Gibt Pfad zur .md zurück."""
+def run_docling(pdf_path: Path) -> tuple[Path, Path]:
+    """Konvertiert PDF zu Markdown + JSON via Docling. Gibt (md_path, json_path) zurück."""
     DOCLING_OUT.mkdir(parents=True, exist_ok=True)
+    DOCLING_JSON_OUT.mkdir(parents=True, exist_ok=True)
     converter = DocumentConverter()
     result = converter.convert(str(pdf_path))
     md_text = result.document.export_to_markdown(
@@ -93,7 +95,10 @@ def run_docling(pdf_path: Path) -> Path:
     )
     md_path = DOCLING_OUT / f"{pdf_path.stem}.md"
     md_path.write_text(md_text, encoding="utf-8")
-    return md_path
+    # Docling JSON mit Bounding Boxes — Basis für PDF-Highlighting in Woche 17+
+    json_path = DOCLING_JSON_OUT / f"{pdf_path.stem}.json"
+    result.document.save_as_json(str(json_path))
+    return md_path, json_path
 
 
 def run_normalize(raw_md: Path) -> Path:
@@ -151,7 +156,7 @@ def ingest(pdf_path: Path) -> bool:
 
         # 5. Docling
         print(f"  Docling  läuft…", end="", flush=True)
-        raw_md = run_docling(pdf_path)
+        raw_md, json_path = run_docling(pdf_path)
         print(f" → {raw_md.name}")
 
         # 6. Normalisierung
@@ -174,11 +179,15 @@ def ingest(pdf_path: Path) -> bool:
                 dokumenttyp,    dokumenttyp_conf,
                 lieferant_name, lieferant_name_conf,
                 steuernummer,   steuernummer_conf,
-                iban,           iban_conf
+                iban,           iban_conf,
+                ust_idnr,       ust_idnr_conf,
+                leistungsdatum, leistungsdatum_conf,
+                docling_json_path
             ) VALUES (
                 %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s
             )
             RETURNING id
             """,
@@ -194,6 +203,9 @@ def ingest(pdf_path: Path) -> bool:
                 result["lieferant_name"]["value"],  result["lieferant_name"]["confidence"],
                 result["steuernummer"]["value"],    result["steuernummer"]["confidence"],
                 result["iban"]["value"],            result["iban"]["confidence"],
+                result["ust_idnr"]["value"],        result["ust_idnr"]["confidence"],
+                result["leistungsdatum"]["value"],  result["leistungsdatum"]["confidence"],
+                str(json_path.relative_to(PROJECT_ROOT)),
             ),
         )
         extr_id = cur.fetchone()[0]
@@ -219,11 +231,14 @@ def ingest(pdf_path: Path) -> bool:
     print(f"  Extraktion #{extr_id}:")
     print(f"    Rechnungsnr.  {fmt('rechnungsnummer')}")
     print(f"    Datum         {fmt('datum')}")
+    print(f"    Leistungsdat. {fmt('leistungsdatum')}")
     print(f"    Brutto        {fmt('betrag_brutto')} €")
     print(f"    MwSt          {fmt('mwst_betrag')} €  [{fmt('mwst_satz')}%]")
     print(f"    Netto         {fmt('netto_betrag')} €")
     print(f"    Typ           {fmt('dokumenttyp')}")
     print(f"    Lieferant     {fmt('lieferant_name')}")
+    print(f"    StNr          {fmt('steuernummer')}")
+    print(f"    USt-IdNr.     {fmt('ust_idnr')}")
 
     # Validierungs-Zusammenfassung
     fails = [c for c in checks if c["result"] == "fail"]

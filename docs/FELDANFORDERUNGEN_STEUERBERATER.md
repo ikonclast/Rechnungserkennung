@@ -1,5 +1,5 @@
 # Felddefinitionen — Was wirklich gebraucht wird
-**Stand:** 26.04.2026 | **Zielgruppe:** Steuerberater / DATEV-Anbindung / GoBD-Konformität
+**Stand:** 02.05.2026 | **Zielgruppe:** Steuerberater / DATEV-Anbindung / GoBD-Konformität
 
 ---
 
@@ -78,29 +78,32 @@ Buchungsdatum | Belegnummer | Betrag (Netto) | Steuercode | Gegenkonto | Buchung
 
 ### Gruppe A — Pflicht (MVP, ohne das kein Pilot)
 
+**Feldkanon eingefroren ab 02.05.2026 — kein neues Feld bis Phase 2.**
+
 | Feld | Typ | §14 | GoBD | DATEV | Priorität |
 |---|---|:---:|:---:|:---:|---|
 | `rechnungsnummer` | String | ✅ | ✅ | ✅ | **Implementiert** |
 | `datum` | Date | ✅ | ✅ | ✅ | **Implementiert** |
-| `brutto_betrag` | Decimal | — | ✅ | — | **Implementiert** |
+| `betrag_brutto` | Decimal | — | ✅ | — | **Implementiert** |
 | `mwst_betrag` | Decimal | ✅ | ✅ | ✅ | **Implementiert** |
 | `iban` | String | — | — | ✅ | **Implementiert** |
-| `dokumenttyp` | Enum | — | ✅ | ✅ | **Fehlt — Woche 5-6** |
-| `netto_betrag` | Decimal | ✅ | ✅ | ✅ | **Fehlt — Woche 5-6** |
-| `mwst_satz` | Decimal | ✅ | ✅ | ✅ | **Fehlt — Woche 5-6** |
-| `lieferant_name` | String | ✅ | ✅ | ✅ | **Fehlt — Woche 5-6** |
-| `steuernummer` | String | ✅* | ✅ | — | **Fehlt — Woche 5-6** |
+| `dokumenttyp` | Enum | — | ✅ | ✅ | **Implementiert** |
+| `netto_betrag` | Decimal | ✅ | ✅ | ✅ | **Implementiert** |
+| `mwst_satz` | Decimal | ✅ | ✅ | ✅ | **Implementiert** |
+| `lieferant_name` | String | ✅ | ✅ | ✅ | **Implementiert** |
+| `steuernummer` | String | ✅* | ✅ | — | **Implementiert** |
+| `ust_idnr` | String | ✅* | ✅ | — | **Implementiert — B1.1** |
+| `leistungsdatum` | Date | ✅ | — | ✅ | **Implementiert — B1.2** |
 
-> *Steuernummer ODER USt-IdNr. — eines von beiden reicht für §14.
+> *Steuernummer ODER USt-IdNr. — eines von beiden reicht für §14 Abs. 4 Nr. 3.
+> Wenn `leistungsdatum` fehlt: DATEV-Export verwendet `datum` als Fallback (dokumentiert).
 
-### Gruppe B — Wichtig (für vollständige §14-Prüfung)
+### Gruppe B — Phase 2 (nach dem Pilot)
 
 | Feld | Typ | §14 | Anmerkung |
 |---|---|:---:|---|
-| `ust_idnr` | String | ✅* | Alternative zu Steuernummer |
-| `leistungsdatum` | Date | ✅ | Oft = Rechnungsdatum; wenn fehlt: datum verwenden |
-| `empfaenger_name` | String | ✅ | Für Multi-Mandant-Isolation essentiell |
-| `lieferant_adresse` | String | ✅ | Für §14 vollständig |
+| `empfaenger_name` | String | ✅ | Phase 2 — Pilot ist Single-User |
+| `lieferant_adresse` | String | ✅ | Phase 2 — für §14 vollständig |
 
 ### Gruppe C — Sinnvoll (für Operations und Phase 2)
 

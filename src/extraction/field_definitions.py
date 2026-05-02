@@ -664,6 +664,67 @@ STEUERNUMMER: list[Rule] = [
 
 
 # ---------------------------------------------------------------------------
+# UST_IDNR (§14 UStG: USt-IdNr. als Alternative zur Steuernummer)
+# Format: DE gefolgt von genau 9 Ziffern (ISO 6523)
+# ---------------------------------------------------------------------------
+
+UST_IDNR: list[Rule] = [
+    # "USt-IdNr.: DE123456789" — Standard-Label
+    Rule(
+        pattern=re.compile(r'USt\.?-?Id(?:Nr\.?|entifikationsnummer)?[:\s]+(DE\d{9})', re.IGNORECASE),
+        confidence=0.95,
+        description="label_ust_idnr",
+    ),
+    # "Steuer-Nr. DE123456789" — wenn DE-Präfix direkt auf Steuer-Label folgt
+    Rule(
+        pattern=re.compile(r'(?:Steuer|USt)[-\s]?(?:Nr\.?|Nummer)[:\s]+(DE\d{9})', re.IGNORECASE),
+        confidence=0.90,
+        description="label_ust_nr_mit_de_praefix",
+    ),
+    # "VAT-ID: DE123456789" — bei internationalen Lieferanten
+    Rule(
+        pattern=re.compile(r'VAT[-\s]?(?:ID|Nr\.?)[:\s]+(DE\d{9})', re.IGNORECASE),
+        confidence=0.85,
+        description="label_vat_id",
+    ),
+    # Rohformat: DE gefolgt von genau 9 Ziffern (Fallback ohne Label)
+    Rule(
+        pattern=re.compile(r'\b(DE\d{9})\b'),
+        confidence=0.70,
+        description="format_de_9ziffern_fallback",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# LEISTUNGSDATUM (Zeitpunkt der Lieferung/Leistung — §14 Abs. 4 Nr. 6 UStG)
+# DATEV bevorzugt dieses Datum als Buchungsdatum gegenüber dem Rechnungsdatum.
+# Wenn nicht gefunden: Fallback auf `datum` im DATEV-Export (dokumentiert).
+# ---------------------------------------------------------------------------
+
+LEISTUNGSDATUM: list[Rule] = [
+    # "Leistungsdatum: 15.04.2026"
+    Rule(
+        pattern=re.compile(r'Leistungsdatum[:\s]+(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE),
+        confidence=0.95,
+        description="label_leistungsdatum",
+    ),
+    # "Lieferdatum: 15.04.2026"
+    Rule(
+        pattern=re.compile(r'Lieferdatum[:\s]+(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE),
+        confidence=0.90,
+        description="label_lieferdatum",
+    ),
+    # "Leistungszeitraum: 01.03.2026 – 31.03.2026" → erstes Datum (Beginn des Zeitraums)
+    Rule(
+        pattern=re.compile(r'Leistungszeitraum[:\s]+(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE),
+        confidence=0.80,
+        description="label_leistungszeitraum_start",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
 # Alle Felder — wird von rule_engine.py importiert
 # ---------------------------------------------------------------------------
 
@@ -678,4 +739,6 @@ ALL_FIELDS: dict[str, list[Rule]] = {
     "mwst_satz":       MWST_SATZ,
     "lieferant_name":  LIEFERANT_NAME,
     "steuernummer":    STEUERNUMMER,
+    "ust_idnr":        UST_IDNR,
+    "leistungsdatum":  LEISTUNGSDATUM,
 }

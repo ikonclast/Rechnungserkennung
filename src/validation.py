@@ -74,30 +74,51 @@ def _result(check_name: str, ok: bool, detail: str | None = None,
 
 # ---------------------------------------------------------------------------
 # Check 1 — §14 Pflichtfelder
+# §33 UStDV: Kleinbetragsrechnungen (≤250€) brauchen keine Rechnungsnummer.
+# §14 Abs. 4 Nr. 3: Steuernummer ODER USt-IdNr. — eines von beiden reicht.
 # ---------------------------------------------------------------------------
 
-# Felder die §14 UStG für den Vorsteuerabzug verlangt.
-# steuernummer ist Pflicht, aber 35% unserer Testdocs haben nur USt-ID → 'warn' statt 'fail'
-_PFLICHT_FAIL = ["rechnungsnummer", "datum", "betrag_brutto", "lieferant_name"]
-_PFLICHT_WARN = ["steuernummer"]   # fehlt oft strukturell → nur Warnung
+# Pflicht für alle Dokumenttypen
+_PFLICHT_IMMER = ["datum", "betrag_brutto", "lieferant_name"]
+# Pflicht nur bei Normalrechnungen (nicht Kleinbetragsrechnung §33 UStDV)
+_PFLICHT_NUR_NORMAL = ["rechnungsnummer"]
 
 
 def _check_pflichtfelder(extraction: dict) -> list[dict]:
     results = []
-    for feld in _PFLICHT_FAIL:
+
+    # §33 UStDV: Kleinbetragsrechnung wenn Typ explizit gesetzt oder Brutto ≤ 250€
+    typ    = _val(extraction, "dokumenttyp")
+    brutto = _to_float(extraction, "betrag_brutto")
+    ist_kbr = (typ == "kleinbetragsrechnung") or (brutto is not None and 0 < brutto <= 250.0)
+
+    for feld in _PFLICHT_IMMER:
         if not _val(extraction, feld):
             results.append(_result(
                 f"pflichtfeld_{feld}", False,
                 f"§14 UStG: Pflichtfeld '{feld}' fehlt — Vorsteuerabzug gefährdet",
                 severity="fail",
             ))
-    for feld in _PFLICHT_WARN:
-        if not _val(extraction, feld):
-            results.append(_result(
-                f"pflichtfeld_{feld}", False,
-                f"§14 UStG: '{feld}' fehlt — bitte manuell ergänzen (USt-ID ausreichend?)",
-                severity="warn",
-            ))
+
+    if not ist_kbr:
+        for feld in _PFLICHT_NUR_NORMAL:
+            if not _val(extraction, feld):
+                results.append(_result(
+                    f"pflichtfeld_{feld}", False,
+                    f"§14 UStG: Pflichtfeld '{feld}' fehlt — Vorsteuerabzug gefährdet",
+                    severity="fail",
+                ))
+
+    # §14 Abs. 4 Nr. 3: Steuernummer ODER USt-IdNr. — eines reicht
+    steuernr = _val(extraction, "steuernummer")
+    ust_id   = _val(extraction, "ust_idnr")
+    if not steuernr and not ust_id:
+        results.append(_result(
+            "pflichtfeld_steuer_id", False,
+            "§14 UStG: Weder Steuernummer noch USt-IdNr. vorhanden — Vorsteuerabzug gefährdet",
+            severity="warn",
+        ))
+
     return results
 
 
