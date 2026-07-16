@@ -110,7 +110,7 @@ python3 -m venv .venv
 psql "postgresql://invoice_ai@localhost:55432/invoice_ai" -f db/schema.sql
 
 # 5. Rechnung einlesen (Ingestion → Extraktion → Validierung → DB)
-python -m scripts.ingest_invoice pfad/zur/rechnung.pdf
+python scripts/ingest_invoice.py pfad/zur/rechnung.pdf
 
 # 6. Review-UI starten
 uvicorn src.ui.app:app --reload
@@ -147,4 +147,4 @@ docs/             Leitfaden, Feldanforderungen, Wochenberichte
 
 ---
 
-<sub>Eigenständiges Lernprojekt im Rahmen der Weiterbildung zum Staatlich anerkannten Wirtschaftsinformatiker — realer Consulting-Use-Case „Prozessautomatisierung / Dokumentenextraktion". Der begleitende Projektleitfaden liegt unter [`docs/RECHNUNGSERKENNUNG_LEITFADEN.md`](docs/RECHNUNGSERKENNUNG_LEITFADEN.md).</sub>
+<sub>Eigenständiges Lernprojekt im Rahmen der Weiterbildung zum Staatlich anerkannten Wirtschaftsinformatiker — realer Consulting-Use-Case „Prozessautomatisierung / Dokumentenextraktion". Fachliche Grundlage: [`docs/FELDANFORDERUNGEN_STEUERBERATER.md`](docs/FELDANFORDERUNGEN_STEUERBERATER.md).</sub>
