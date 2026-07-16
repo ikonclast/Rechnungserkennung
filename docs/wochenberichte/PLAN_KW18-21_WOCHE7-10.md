@@ -192,7 +192,7 @@ import os
 import psycopg2
 from contextlib import contextmanager
 
-DSN = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/invoices")
+DSN = os.getenv("DATABASE_URL", "postgresql://postgres:change_me@localhost:5432/invoices")
 
 @contextmanager
 def get_conn():
@@ -217,8 +217,8 @@ import os
 from minio import Minio
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-MINIO_ACCESS   = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET   = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ACCESS   = os.getenv("MINIO_ACCESS_KEY", "change_me")
+MINIO_SECRET   = os.getenv("MINIO_SECRET_KEY", "change_me")
 BUCKET         = "invoices"
 
 def _client():
