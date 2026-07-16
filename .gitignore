@@ -5,9 +5,11 @@ __pycache__/
 venv/
 .env
 
-# IDE
+# IDE / AI-Assistenten
 .vscode/
 .idea/
+.claude/
+.codex
 
 # OS
 .DS_Store
@@ -28,6 +30,8 @@ docs/*
 !docs/FELDANFORDERUNGEN_STEUERBERATER.md
 !docs/wochenberichte/
 !docs/wochenberichte/**
+!docs/screenshots/
+!docs/screenshots/**
 
 # Docker / local data
 docker-data/
