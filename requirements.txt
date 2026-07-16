@@ -1,1 +1,6 @@
 docling==2.91.0
+fastapi[standard]
+jinja2
+python-multipart
+psycopg2-binary
+minio

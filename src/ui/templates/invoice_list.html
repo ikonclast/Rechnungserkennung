@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Rechnungen — Rechnungserkennung</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+
+<header class="app-header">
+  <a href="/" style="display:contents;text-decoration:none;">
+    <div class="monogram"><span class="s">S</span><span class="h">H</span></div>
+    <div class="brand-text">
+      <span class="brand-name">SeHin Consulting</span>
+      <span class="brand-tag">KI. Einfach. Rechtssicher.</span>
+    </div>
+  </a>
+  <div class="header-divider"></div>
+  <span class="app-label">Rechnungserkennung</span>
+  <nav class="header-nav">
+    <a href="/invoices" class="nav-link {% if request.url.path.startswith('/invoices') %}active{% endif %}">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="2" width="10" height="13" rx="1.5"/><path d="M6 6h4M6 9h4M6 12h2"/>
+      </svg>
+      Rechnungen
+    </a>
+    <a href="/export/datev" class="nav-link">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2v9M4 7l4 4 4-4M2 14h12"/>
+      </svg>
+      DATEV Export
+    </a>
+    <a href="/api/docs" target="_blank" class="nav-link">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6"/><path d="M8 7v5M8 5.5v.5"/>
+      </svg>
+      API
+    </a>
+  </nav>
+</header>
+
+<div class="page">
+
+  <div class="list-header-row">
+    <div class="list-header-left">
+      <h1 class="h1">Rechnungen</h1>
+      <span class="count-pill">{{ invoices | length }}</span>
+    </div>
+    <a href="/export/datev{% if filters.date_from or filters.date_to %}?{% if filters.date_from %}from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&amp;to={{ filters.date_to }}{% endif %}{% endif %}" class="btn btn-secondary btn-sm">
+      <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2v9M4 7l4 4 4-4M2 14h12"/>
+      </svg>
+      DATEV Export
+    </a>
+  </div>
+
+  <form class="card filter-bar" method="get" action="/invoices">
+    <div class="field field-inline">
+      <label class="label-mono">Von</label>
+      <input class="input" type="date" name="from" value="{{ filters.date_from }}"/>
+    </div>
+    <div class="field field-inline">
+      <label class="label-mono">Bis</label>
+      <input class="input" type="date" name="to" value="{{ filters.date_to }}"/>
+    </div>
+    <div class="field field-inline">
+      <label class="label-mono">Typ</label>
+      <select class="select" name="type">
+        <option value="">Alle</option>
+        <option value="rechnung" {% if filters.doc_type|lower == 'rechnung' %}selected{% endif %}>Rechnung</option>
+        <option value="kleinbetragsrechnung" {% if filters.doc_type|lower == 'kleinbetragsrechnung' %}selected{% endif %}>Kleinbetragsrechnung</option>
+        <option value="gutschrift" {% if filters.doc_type|lower == 'gutschrift' %}selected{% endif %}>Gutschrift</option>
+        <option value="storno" {% if filters.doc_type|lower == 'storno' %}selected{% endif %}>Storno</option>
+      </select>
+    </div>
+    <div class="field field-inline">
+      <label class="label-mono">Status</label>
+      <select class="select" name="status">
+        <option value="">Alle</option>
+        <option value="confirmed" {% if filters.status == 'confirmed' %}selected{% endif %}>Bestätigt</option>
+        <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>Offen</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+      {% if filters.date_from or filters.date_to or filters.doc_type or filters.status %}
+      <a href="/invoices" class="btn btn-ghost btn-sm">Zurücksetzen</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <div class="card table-wrap">
+    {% if invoices %}
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th style="width:110px">Datum</th>
+          <th>Lieferant</th>
+          <th class="right" style="width:130px">Betrag Brutto</th>
+          <th style="width:110px">Typ</th>
+          <th style="width:110px">Validierung</th>
+          <th style="width:130px">Status</th>
+          <th style="width:90px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr onclick="location.href='/invoices/{{ inv.id }}'">
+          <td>{{ inv.datum or '<span class="dash">—</span>' | safe }}</td>
+          <td>
+            <div class="supplier">
+              <span class="supplier-name">{{ inv.lieferant_name or "—" }}</span>
+              <span class="supplier-file">{{ inv.filename }}</span>
+            </div>
+          </td>
+          <td class="right">{{ inv.betrag_brutto or '<span class="dash">—</span>' | safe }}</td>
+          <td>
+            {% if inv.dokumenttyp %}
+            <span class="pill pill-violet">{{ inv.dokumenttyp }}</span>
+            {% else %}
+            <span class="dash">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if inv.fail_count > 0 %}
+            <span class="pill pill-error">{{ inv.fail_count }} FAIL</span>
+            {% elif inv.warn_count > 0 %}
+            <span class="pill pill-warn">{{ inv.warn_count }} WARN</span>
+            {% else %}
+            <span class="pill pill-green">✓ OK</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if inv.is_confirmed %}
+            <span class="pill pill-green-strong">
+              <svg class="icon-sm" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>
+              Bestätigt
+            </span>
+            {% else %}
+            <span class="pill pill-stone">Offen</span>
+            {% endif %}
+          </td>
+          <td>
+            <a class="review-link" href="/invoices/{{ inv.id }}" onclick="event.stopPropagation()">
+              Review
+              <svg class="icon-sm" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:48px 24px;text-align:center;color:var(--ink-500);">
+      <div style="font-size:32px;margin-bottom:12px;">📄</div>
+      <div style="font-size:14px;">Keine Rechnungen gefunden.</div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+</body>
+</html>

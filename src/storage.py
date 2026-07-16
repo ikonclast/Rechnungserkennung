@@ -10,6 +10,7 @@ Beispiel:
 """
 
 import os
+from datetime import timedelta
 
 from minio import Minio
 from minio.error import S3Error
@@ -44,3 +45,22 @@ def exists(object_name: str) -> bool:
         return True
     except S3Error:
         return False
+
+
+def presigned_url(object_name: str, expires_hours: int = 1) -> str:
+    """Gibt eine zeitlich begrenzte Lese-URL für ein MinIO-Objekt zurück."""
+    return _client().presigned_get_object(
+        _BUCKET,
+        object_name,
+        expires=timedelta(hours=expires_hours),
+    )
+
+
+def get_object_bytes(object_name: str) -> bytes:
+    """Lädt ein Objekt aus MinIO und gibt den Inhalt als bytes zurück."""
+    response = _client().get_object(_BUCKET, object_name)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()

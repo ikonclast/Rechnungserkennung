@@ -125,17 +125,81 @@ DATUM: list[Rule] = [
         confidence=0.95,
         description="label_rechnungsdatum",
     ),
-    # "Datum: 15.04.2026" — Fastbill und viele andere
+    # Amazon DE: "Rechnungsdatum\n/Lieferdatum\n\n28.12.2025" — Label auf separater Zeile, DE-Datum
+    # Auch: reines "Rechnungsdatum\n\n28.12.2025" ohne Lieferdatum-Suffix
+    Rule(
+        pattern=re.compile(
+            r'Rechnungsdatum\s*\n+(?:/\s*Lieferdatum\s*\n+)?'
+            r'(\d{2}\.\d{2}\.\d{4})',
+            re.IGNORECASE,
+        ),
+        confidence=0.90,
+        description="label_rechnungsdatum_newline_de",
+    ),
+    # SevDesk Gutschrift/Storno-Sidebar: "Gutschrift-Nr. Datum Leistungszeitraum\n{nr}\n{datum}"
+    # Docling rendert mehrspaltige Sidebar mit Labels in Zeile 1, Werte in Folgezeilen.
+    Rule(
+        pattern=re.compile(
+            r'Gutschrift-Nr\.\s+Datum\s+Leistungszeitraum\s*\n+'
+            r'\S+\s*\n+'
+            r'(\d{2}\.\d{2}\.\d{4})',
+        ),
+        confidence=0.87,
+        description="label_datum_sevdesk_gutschrift_storno",
+    ),
+    # "Datum: 15.04.2026" — Fastbill und viele andere (Label + Wert in einer Zeile)
     Rule(
         pattern=re.compile(r'(?<!\w)Datum[:\s]+' + _DATE_DE, re.IGNORECASE),
         confidence=0.85,
         description="label_datum",
     ),
-    # sevDesk-Sidebar: "DATUM\n\n15.04.2026"
+    # sevDesk-Standard-Sidebar: "DATUM\n\n15.04.2026"
     Rule(
         pattern=re.compile(r'DATUM\s*\n+' + _DATE_DE),
         confidence=0.85,
         description="label_datum_sevdesk_sidebar",
+    ),
+    # Lexoffice Sidebar: "Datum:\n{nicht-Datum-Zeilen}\n\nDD.MM.YYYY"
+    # Docling trennt 2-Spalten-Sidebar: erst alle Labels, dann alle Werte.
+    # Überspringt Rechnungsnr/Kundennr und landet auf erstem Datum.
+    Rule(
+        pattern=re.compile(
+            r'Datum:\s*\n+'
+            r'(?:(?!\d{2}\.\d{2}\.\d{4})[^\n]+\n+)*'
+            r'(\d{2}\.\d{2}\.\d{4})',
+        ),
+        confidence=0.85,
+        description="label_datum_sidebar_lexoffice",
+    ),
+    # Congstar: "Rechnungsdatum Rechnungsnummer Seite Mandats-ID\n{kundennr} {datum} ..."
+    # Alle Labels in einer Zeile, danach Werte in gleicher Reihenfolge.
+    Rule(
+        pattern=re.compile(
+            r'Rechnungsdatum\s+Rechnungsnummer\s+[^\n]*\n+'
+            r'\w+\s+(\d{2}\.\d{2}\.\d{4})',
+        ),
+        confidence=0.85,
+        description="label_datum_congstar_sidebar",
+    ),
+    # BlueBrix Sidebar: "Datum\nKundennummer\nRechnungsnummer\n{datum}\n..."
+    Rule(
+        pattern=re.compile(
+            r'(?<!\w)Datum\s*\n+Kundennummer\s*\n+Rechnungsnummer\s*\n+'
+            r'(\d{2}\.\d{2}\.\d{4})',
+        ),
+        confidence=0.85,
+        description="label_datum_bluebrix_sidebar",
+    ),
+    # Fernerofolio: "Ausstellungsdatum\n\n25. Dezember 2025" — kein DE-Datumsformat.
+    # Nächstes DD.MM.YYYY (aus Produkttabelle) ist das gleiche Datum.
+    Rule(
+        pattern=re.compile(
+            r'Ausstellungsdatum\s+'
+            r'(?:(?!\d{2}\.\d{2}\.\d{4})[\s\S])*?'
+            r'(\d{2}\.\d{2}\.\d{4})',
+        ),
+        confidence=0.82,
+        description="label_ausstellungsdatum_voraus",
     ),
     # intersport: "Rechnungsdatum March 26, 2026" — englisches Datum in Tabellenzelle
     Rule(
@@ -669,25 +733,38 @@ STEUERNUMMER: list[Rule] = [
 # ---------------------------------------------------------------------------
 
 UST_IDNR: list[Rule] = [
-    # "USt-IdNr.: DE123456789" — Standard-Label
+    # "USt-IdNr.: DE123456789" / "USt-Id.Nr.: DE 283508818" — Standard + Intersport-Variante
+    # DE-Zahl kann Leerzeichen enthalten (z.B. "DE 211 045 709") — wird in _clean_value normalisiert
     Rule(
-        pattern=re.compile(r'USt\.?-?Id(?:Nr\.?|entifikationsnummer)?[:\s]+(DE\d{9})', re.IGNORECASE),
+        pattern=re.compile(r'USt\.?-?Id\.?(?:Nr\.?|entifikationsnummer)?[:\s]+(DE[\s\d]{9,13})', re.IGNORECASE),
         confidence=0.95,
         description="label_ust_idnr",
     ),
+    # "UST-ID-NR.\nDE 211 045 709" — STRATO Footer (Großbuchstaben, Zeilenumbruch)
+    Rule(
+        pattern=re.compile(r'UST-ID-NR\.?\s+(DE[\s\d]{9,13})', re.IGNORECASE),
+        confidence=0.93,
+        description="label_ust_id_nr_strato",
+    ),
+    # "Umsatzsteuer-ID: DE 789 012 345" — Billomat Footer
+    Rule(
+        pattern=re.compile(r'Umsatzsteuer-ID[:\s]+(DE[\s\d]{9,13})', re.IGNORECASE),
+        confidence=0.92,
+        description="label_umsatzsteuer_id_billomat",
+    ),
     # "Steuer-Nr. DE123456789" — wenn DE-Präfix direkt auf Steuer-Label folgt
     Rule(
-        pattern=re.compile(r'(?:Steuer|USt)[-\s]?(?:Nr\.?|Nummer)[:\s]+(DE\d{9})', re.IGNORECASE),
+        pattern=re.compile(r'(?:Steuer|USt)[-\s]?(?:Nr\.?|Nummer)[:\s]+(DE[\s\d]{9,13})', re.IGNORECASE),
         confidence=0.90,
         description="label_ust_nr_mit_de_praefix",
     ),
     # "VAT-ID: DE123456789" — bei internationalen Lieferanten
     Rule(
-        pattern=re.compile(r'VAT[-\s]?(?:ID|Nr\.?)[:\s]+(DE\d{9})', re.IGNORECASE),
+        pattern=re.compile(r'VAT[-\s]?(?:ID|Nr\.?)[:\s]+(DE[\s\d]{9,13})', re.IGNORECASE),
         confidence=0.85,
         description="label_vat_id",
     ),
-    # Rohformat: DE gefolgt von genau 9 Ziffern (Fallback ohne Label)
+    # Rohformat: DE gefolgt von genau 9 Ziffern ohne Leerzeichen (Fallback ohne Label)
     Rule(
         pattern=re.compile(r'\b(DE\d{9})\b'),
         confidence=0.70,
@@ -709,17 +786,80 @@ LEISTUNGSDATUM: list[Rule] = [
         confidence=0.95,
         description="label_leistungsdatum",
     ),
-    # "Lieferdatum: 15.04.2026"
+    # "Lieferdatum: 15.04.2026" — einfaches Label direkt vor dem Datum
     Rule(
         pattern=re.compile(r'Lieferdatum[:\s]+(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE),
         confidence=0.90,
         description="label_lieferdatum",
+    ),
+    # Lexoffice Sidebar: "Datum:\nLieferdatum:\n{nicht-Datum-Zeilen}\n{datum}\n{lieferdatum}"
+    # Docling rendert 2-Spalten-Tabellen so: erst alle Labels, dann alle Werte.
+    # Wir überspringen nicht-Datum-Zeilen (Rechnungsnr, Kundennr), dann erstes Datum (=Rechnungsdatum),
+    # dann zweites Datum (=Lieferdatum) als group(1).
+    Rule(
+        pattern=re.compile(
+            r'Datum:\s*\n+Lieferdatum:\s*\n+'
+            r'(?:(?!\d{2}\.\d{2}\.\d{4})[^\n]*\n+)+'
+            r'\d{2}\.\d{2}\.\d{4}\s*\n+'
+            r'(\d{2}\.\d{2}\.\d{4})',
+        ),
+        confidence=0.88,
+        description="label_lieferdatum_lexoffice_sidebar",
+    ),
+    # SevDesk Sidebar: "Gutschrift-Nr. Datum Leistungszeitraum\n{nr}\n{datum}\n{dd.mm.yyyy - dd.mm.yyyy}"
+    # Überspringt Rechnungsnr-Wert und Datum-Wert, landet dann auf dem Zeitraum-Startdatum.
+    Rule(
+        pattern=re.compile(
+            r'Leistungszeitraum\s*\n+'
+            r'\S+\s*\n+'
+            r'\d{2}\.\d{2}\.\d{4}\s*\n+'
+            r'(\d{2}\.\d{2}\.\d{4})\s*-',
+        ),
+        confidence=0.85,
+        description="label_leistungszeitraum_sevdesk_sidebar",
     ),
     # "Leistungszeitraum: 01.03.2026 – 31.03.2026" → erstes Datum (Beginn des Zeitraums)
     Rule(
         pattern=re.compile(r'Leistungszeitraum[:\s]+(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE),
         confidence=0.80,
         description="label_leistungszeitraum_start",
+    ),
+    # congstar: "für deine genutzten Leistungen vom" + (einige Zeilen weiter) Datumbereich
+    # Docling trennt Labels und Werte im 2-Spalten-Layout — tempered greedy überspringt
+    # einzeln stehende Daten (Rechnungsdatum) und landet am ersten "DD.MM.YYYY -"-Muster.
+    Rule(
+        pattern=re.compile(
+            r'für (?:deine|Ihre) (?:genutzten )?Leistungen vom'
+            r'(?:(?!\d{2}\.\d{2}\.\d{4}\s*[-–])[\s\S])*?'
+            r'(\d{2}\.\d{2}\.\d{4})\s*[-–]',
+            re.IGNORECASE,
+        ),
+        confidence=0.82,
+        description="label_leistungen_vom_congstar",
+    ),
+    # Amazon Audible: "Bestelldatum\n\n09 Apr 2026" — englisches Kurzdatum nach Label
+    Rule(
+        pattern=re.compile(
+            r'Bestelldatum\s+'
+            r'(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})',
+            re.IGNORECASE,
+        ),
+        confidence=0.72,
+        description="label_bestelldatum_audible",
+    ),
+    # Strato: "vom 13.12.2025 bis 12.01.2026" eingebettet in Artikelbeschreibung
+    # Kein explizites Leistungszeitraum-Label — Confidence niedrig.
+    Rule(
+        pattern=re.compile(r'\bvom\s+(\d{2}\.\d{2}\.\d{4})\s+bis\s+\d{2}\.\d{2}\.\d{4}', re.IGNORECASE),
+        confidence=0.60,
+        description="label_vom_bis_strato",
+    ),
+    # Letzter Fallback: beliebiger Datumbereich DD.MM.YYYY - DD.MM.YYYY im Dokument
+    # Trifft z. B. fernerofolio (Laufzeit in Tabellenzeile: "25.12.2025 - 25.12.2026").
+    Rule(
+        pattern=re.compile(r'(\d{2}\.\d{2}\.\d{4})\s*[-–]\s*\d{2}\.\d{2}\.\d{4}'),
+        confidence=0.55,
+        description="datum_bereich_start_fallback",
     ),
 ]
 

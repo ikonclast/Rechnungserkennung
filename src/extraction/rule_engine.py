@@ -36,8 +36,7 @@ def _clean_iban(value: str) -> str:
 
 def _clean_value(field_name: str, value: str) -> str:
     value = value.strip()
-    if field_name == "iban":
-        import re
+    if field_name in ("iban", "ust_idnr"):
         return re.sub(r'\s+', '', value)
     return value
 
@@ -47,6 +46,9 @@ def _is_plausible(field_name: str, value: str) -> bool:
         # Echte Rechnungsnummern enthalten immer mindestens eine Ziffer.
         # Schließt Wörter wie "Seite", "auf", "Nummer" aus.
         return bool(re.search(r'\d', value))
+    if field_name == "ust_idnr":
+        # Nach Normalisierung muss DE + genau 9 Ziffern vorliegen.
+        return bool(re.fullmatch(r'DE\d{9}', value))
     return True
 
 
@@ -90,6 +92,40 @@ def extract(text: str) -> ExtractionResult:
         if field != "dokumenttyp"
     }
     result["dokumenttyp"] = _detect_dokumenttyp(text, result.get("betrag_brutto", {}))
+
+    # Intersport u.a.: "Rechnungsdatum = Leistungsdatum" → Datum als Leistungsdatum übernehmen
+    if result["leistungsdatum"]["value"] is None:
+        if re.search(r'Rechnungsdatum\s*=\s*Leistungsdatum', text, re.IGNORECASE):
+            datum_val = result["datum"]["value"]
+            if datum_val:
+                result["leistungsdatum"] = {
+                    "value": datum_val,
+                    "confidence": 0.75,
+                    "rule": "rechnungsdatum_gleich_leistungsdatum",
+                }
+
+    # BlueBrix u.a.: "Das Rechnungsdatum entspricht dem Lieferdatum"
+    if result["leistungsdatum"]["value"] is None:
+        if re.search(r'Rechnungsdatum\s+entspricht\s+dem\s+Lieferdatum', text, re.IGNORECASE):
+            datum_val = result["datum"]["value"]
+            if datum_val:
+                result["leistungsdatum"] = {
+                    "value": datum_val,
+                    "confidence": 0.75,
+                    "rule": "rechnungsdatum_entspricht_lieferdatum",
+                }
+
+    # Letzter Fallback: kein Leistungsdatum gefunden → Rechnungsdatum verwenden.
+    # DATEV-Export nutzt ohnehin datum als Fallback; UI zeigt Orange (60 %) zur Kennzeichnung.
+    if result["leistungsdatum"]["value"] is None:
+        datum_val = result["datum"]["value"]
+        if datum_val:
+            result["leistungsdatum"] = {
+                "value": datum_val,
+                "confidence": 0.60,
+                "rule": "datum_als_leistungsdatum_fallback",
+            }
+
     return result
 
 
