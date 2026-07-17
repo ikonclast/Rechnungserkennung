@@ -16,13 +16,13 @@ Ein Beleg-Extraktions-System, das aus PDF-Rechnungen die buchhaltungsrelevanten 
 
 ## Screenshots
 
-> **Review-Oberfläche** — PDF links, extrahierte Felder mit Confidence-Ampel rechts, §14-Validierung und Freigabe darunter.
-
-![Review-Detailansicht](docs/screenshots/01-review-detail.png)
-
 > **Rechnungsliste** — alle Belege mit Dokumenttyp, Betrag und Validierungs-Ampel (Fail/Warn), filterbar nach Zeitraum, Typ und Freigabestatus.
 
-![Rechnungsliste](docs/screenshots/02-rechnungsliste.png)
+![Rechnungsliste](docs/screenshots/01-rechnungsliste.png)
+
+> **Review-Oberfläche** — PDF links, extrahierte Felder mit Confidence-Ampel rechts, §14-Validierung und Freigabe darunter.
+
+![Review-Detailansicht](docs/screenshots/02-review-detail.png)
 
 ---
 

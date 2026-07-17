@@ -6,8 +6,8 @@ zieht das README sie automatisch:
 
 | Datei | Motiv | Worauf achten |
 |---|---|---|
-| `01-review-detail.png` | Detailansicht `/invoices/{id}` | PDF-Panel links **mit sichtbarer Rechnung**, rechts die Felder mit **Confidence-Ampel** (grün/gelb/orange), darunter Validierung + „Rechnung bestätigen". Am besten eine Rechnung mit gemischten Ampelfarben zeigen. |
-| `02-rechnungsliste.png` | Übersicht `/invoices` | Mehrere Zeilen mit Dokumenttyp, Betrag und **Fail/Warn-Zählern**; Filterleiste oben sichtbar. |
+| `01-rechnungsliste.png` | Übersicht `/invoices` | Mehrere Zeilen mit Dokumenttyp, Betrag und **Fail/Warn-Zählern**; Filterleiste oben sichtbar. |
+| `02-review-detail.png` | Detailansicht `/invoices/{id}` | PDF-Panel links **mit sichtbarer Rechnung**, rechts die Felder mit **Confidence-Ampel** (grün/gelb/orange), darunter Validierung + „Rechnung bestätigen". Am besten eine Rechnung mit gemischten Ampelfarben zeigen. |
 
 **Tipps:**
 - Fenster auf ~1280–1440 px Breite, damit das Split-Layout (PDF | Felder) sauber steht.
